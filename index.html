@@ -5,15 +5,107 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Petite Planète — Paris 3D</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #FF7A00; overflow: hidden; }
   #wrap { position: absolute; inset: 0; background: #FF7A00; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
   #scene { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  /* ===== Titre animé au-dessus de la planète ===== */
+  #title {
+    position: absolute;
+    top: 7vh;
+    left: 0;
+    right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #title .kicker {
+    font-size: clamp(11px, 1.4vw, 16px);
+    letter-spacing: 0.55em;
+    text-transform: uppercase;
+    color: rgba(40, 20, 0, 0.62);
+    font-weight: 600;
+    margin: 0 0 0.55em 0.55em;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: kickerIn 0.9s cubic-bezier(.22,1,.36,1) 0.2s forwards;
+  }
+  #title h1 {
+    margin: 0;
+    font-weight: 800;
+    font-size: clamp(28px, 5.5vw, 80px);
+    line-height: 0.92;
+    color: #fff8ef;
+    text-shadow: 0 6px 24px rgba(120, 50, 0, 0.35);
+    display: flex;
+    justify-content: center;
+    gap: 0.02em;
+  }
+  #title h1 .ltr {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(0.5em) rotate(6deg);
+    animation: letterIn 0.7s cubic-bezier(.2,1.2,.3,1) forwards;
+  }
+  #title h1 .ltr.space { width: 0.55em; }
+  #title .underline {
+    height: 4px;
+    width: 0;
+    background: #fff8ef;
+    border-radius: 4px;
+    margin: 0.5em auto 0;
+    box-shadow: 0 3px 12px rgba(120, 50, 0, 0.3);
+    animation: lineGrow 0.8s cubic-bezier(.65,0,.35,1) 1.1s forwards;
+  }
+  @keyframes kickerIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes letterIn {
+    to { opacity: 1; transform: translateY(0) rotate(0); }
+  }
+  @keyframes lineGrow {
+    to { width: clamp(80px, 16vw, 240px); }
+  }
+
+  /* ===== Faisceau d'un seul projecteur (coin haut-droite -> chaise au centre) ===== */
+  #spotbeam {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0;
+    animation: beamIn 1.6s ease 0.3s forwards;
+  }
+  @keyframes beamIn { to { opacity: 1; } }
 </style>
+<link id="gfont-Permanent-Marker" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Permanent+Marker:wght@300;400;500;600;700&amp;display=swap">
 </head>
-<body>
+<body style="font-family: &quot;Permanent Marker&quot;">
 <div id="wrap">
   <canvas id="scene"></canvas>
+  <svg id="spotbeam" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="beamGrad" x1="100%" y1="0%" x2="46%" y2="54%">
+        <stop offset="0%" stop-color="rgb(255,251,236)" stop-opacity="0.6"></stop>
+        <stop offset="55%" stop-color="rgb(255,247,216)" stop-opacity="0.28"></stop>
+        <stop offset="100%" stop-color="rgb(255,243,204)" stop-opacity="0"></stop>
+      </linearGradient>
+      <linearGradient id="beamGradL" x1="0%" y1="0%" x2="54%" y2="54%">
+        <stop offset="0%" stop-color="rgb(255,251,236)" stop-opacity="0.6"></stop>
+        <stop offset="55%" stop-color="rgb(255,247,216)" stop-opacity="0.28"></stop>
+        <stop offset="100%" stop-color="rgb(255,243,204)" stop-opacity="0"></stop>
+      </linearGradient>
+      <filter id="beamBlur" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="1.6"></feGaussianBlur>
+      </filter>
+    </defs>
+    <polygon points="99,1 100,5 54,55 41,59" fill="url(#beamGrad)" filter="url(#beamBlur)"></polygon>
+    <polygon points="1,1 0,5 46,55 59,59" fill="url(#beamGradL)" filter="url(#beamBlur)"></polygon>
+  </svg>
 </div>
 <script>
 function start() {
@@ -49,6 +141,28 @@ function start() {
     const fill = new THREE.DirectionalLight(0xbcd0ff, 0.35);
     fill.position.set(-12, -6, -10);
     scene.add(fill);
+
+    // Projecteur dirigé sur la chaise depuis le haut-droite de l'écran
+    // (n'éclaire QUE la chaise grâce au layer 1)
+    const CHAIR_LAYER = 1;
+    const spot = new THREE.SpotLight(0xfff3d2, 6.5, 90, Math.PI / 9, 0.5, 0.9);
+    spot.position.set(24, 36, 18);
+    spot.target.position.set(0, 13.5, 0);
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(1024, 1024);
+    spot.layers.set(CHAIR_LAYER);
+    scene.add(spot);
+    scene.add(spot.target);
+
+    // Second projecteur symétrique depuis le haut-gauche, n'éclaire que la chaise
+    const spotL = new THREE.SpotLight(0xfff3d2, 6.5, 90, Math.PI / 9, 0.5, 0.9);
+    spotL.position.set(-24, 36, 18);
+    spotL.target.position.set(0, 13.5, 0);
+    spotL.castShadow = true;
+    spotL.shadow.mapSize.set(1024, 1024);
+    spotL.layers.set(CHAIR_LAYER);
+    scene.add(spotL);
+    scene.add(spotL.target);
 
     const world = new THREE.Group();
     scene.add(world);
@@ -723,6 +837,73 @@ function start() {
       const CHAIR_SCALE = 7.5;
       g.scale.setScalar(CHAIR_SCALE);
       dropGroup(g, 90, 0, 0);
+      g.position.z -= 1.0;   // recule un peu la chaise pour dégager le dossier derrière le personnage
+      // La chaise partage le layer du projecteur pour en recevoir la lumière
+      g.traverse(o => { if (o.isMesh) o.layers.enable(CHAIR_LAYER); });
+      window.__chair = g;
+    })();
+
+    // ===== Personnage (modèle GLB) assis sur la chaise =====
+    (() => {
+      const FLOOR_Y = 10;                         // surface de la planète au pôle
+      const charGroup = new THREE.Group();
+      world.add(charGroup);
+
+      // Modèle DÉJÀ assis : on ancre les pieds au sol et on agrandit
+      // jusqu'à ce que le bassin repose sur l'assise.
+      const T = window.__charT = { scale: 11.6, y: 1.0, x: 0, z: 0, rotY: 0 };
+      const apply = () => {
+        charGroup.scale.setScalar(T.scale);
+        charGroup.position.set(T.x, FLOOR_Y + T.y, T.z);   // pieds (origine du modèle) au sol
+        charGroup.rotation.y = T.rotY;
+      };
+      window.__charTune = (o) => { Object.assign(T, o); apply(); };
+
+      // Lumière dédiée au personnage + chaise (layer 1), pour bien l'éclairer
+      const charKey = new THREE.DirectionalLight(0xfff3e2, 2.2);
+      charKey.position.set(10, 30, 20);
+      charKey.layers.set(1);
+      scene.add(charKey);
+      const charFill = new THREE.DirectionalLight(0xdfe8ff, 1.0);
+      charFill.position.set(-14, 16, -10);
+      charFill.layers.set(1);
+      scene.add(charFill);
+      const charAmb = new THREE.AmbientLight(0xfff2e0, 0.9);
+      charAmb.layers.set(1);
+      scene.add(charAmb);
+
+      const loader = new THREE.GLTFLoader();
+      loader.load('uploads/textured_mesh (1).glb', (gltf) => {
+        const model = gltf.scene;
+        // normalise la hauteur à 1
+        let box = new THREE.Box3().setFromObject(model);
+        model.scale.setScalar(1 / (box.max.y - box.min.y));
+        model.updateMatrixWorld(true);
+        // recentre en X/Z, pose les pieds (min.y) à l'origine du groupe
+        box = new THREE.Box3().setFromObject(model);
+        const c = new THREE.Vector3(); box.getCenter(c);
+        model.position.x -= c.x;
+        model.position.z -= c.z;
+        model.position.y -= box.min.y;
+        model.traverse(o => {
+          if (o.isMesh) {
+            o.castShadow = true; o.receiveShadow = true; o.layers.enable(1);
+            // les textures GLB sont en sRGB : on les aligne sur le pipeline linéaire
+            // de la scène pour qu'elles ne sortent pas trop sombres
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m => {
+              if (!m) return;
+              if (m.map) { m.map.encoding = THREE.LinearEncoding; }
+              m.emissive = new THREE.Color(0xffffff);
+              m.emissiveMap = m.map || null;
+              m.emissiveIntensity = 0.28;
+              m.needsUpdate = true;
+            });
+          }
+        });
+        charGroup.add(model);
+        apply();
+      }, undefined, (err) => { console.error('GLB load error', err); });
     })();
 
     let rotY = 4.71, rotX = 0.0, tRotY = 4.71, tRotX = 0.0;
